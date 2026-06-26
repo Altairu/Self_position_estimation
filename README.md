@@ -58,7 +58,7 @@ STM32CubeProgrammer CLI を使用して、ST-Link経由でビルドしたファ�
 ## 使い方
 
 * 可視化アプリの起動
-  * プロジェクトルートにある [gui_visualizer.html](file:///c:/Users/106no/workspace/Self_position_estimation/gui_visualizer.html) を、Google Chrome もしくは Microsoft Edge で直接開きます。
+  * プロジェクトルートにある [gui_visualizer.html](gui_visualizer.html) を、Google Chrome もしくは Microsoft Edge で直接開きます。
 * シリアルポートへの接続
   * 画面右上にある「シリアル接続」ボタンを押します。
   * ポートの選択ダイアログが表示されるので、マイコンが接続されている仮想 COM ポート（例: STLink Virtual COM Port）を選択し、接続します。
@@ -71,4 +71,4 @@ STM32CubeProgrammer CLI を使用して、ST-Link経由でビルドしたファ�
 
 ## ライセンス
 
-このプロジェクトは [MIT ライセンス](file:///c:/Users/106no/workspace/Self_position_estimation/LICENSE) のもとで公開されています。詳細は LICENSE ファイルを参照してください。
+このプロジェクトは [MIT ライセンス](LICENSE) のもとで公開されています。詳細は LICENSE ファイルを参照してください。

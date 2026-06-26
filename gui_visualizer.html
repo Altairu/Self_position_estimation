@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自己位置・姿勢 リアルタイムビジュアライザ</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(17, 24, 39, 0.7);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-cyan: #06b6d4;
+            --accent-pink: #ec4899;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+            background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--panel-border);
+            background: rgba(3, 7, 18, 0.5);
+            backdrop-filter: blur(8px);
+        }
+
+        .logo-area h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--accent-cyan), var(--accent-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
+        }
+
+        .logo-area p {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 0.2rem;
+        }
+
+        .control-area {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .status-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444; /* 切断時は赤 */
+            box-shadow: 0 0 8px #ef4444;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.active {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 12px var(--accent-green);
+        }
+
+        button.btn {
+            font-family: inherit;
+            font-weight: 600;
+            padding: 0.6rem 1.5rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(4px);
+        }
+
+        button.btn:hover {
+            background: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+            color: #030712;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.4);
+            transform: translateY(-1px);
+        }
+
+        button.btn.connected {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        button.btn.connected:hover {
+            background: #ef4444;
+            border-color: #ef4444;
+            color: var(--text-primary);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+        }
+
+        .dashboard {
+            flex: 1;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: 350px 1fr 1fr;
+            grid-template-rows: auto 1fr;
+            gap: 1.5rem;
+            max-height: calc(100vh - 80px);
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: border-color 0.3s ease;
+        }
+
+        .panel:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .panel-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-header h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 14px;
+            background: var(--accent-cyan);
+            border-radius: 2px;
+        }
+
+        .panel-content {
+            padding: 1.25rem;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* 数値モニターパネルのレイアウト */
+        .info-panel {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+        }
+
+        .monitor-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .monitor-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .monitor-title {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .monitor-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .monitor-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: transparent;
+        }
+
+        .card-cyan::after { background: var(--accent-cyan); }
+        .card-pink::after { background: var(--accent-pink); }
+        .card-amber::after { background: var(--accent-amber); }
+
+        .card-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .card-value {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-top: 0.25rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 3D姿勢ビューパネル */
+        .view-3d-panel {
+            grid-column: 2;
+            grid-row: 1 / span 2;
+        }
+
+        #three-container {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            position: relative;
+        }
+
+        /* 2D軌跡マップパネル */
+        .map-2d-panel {
+            grid-column: 3;
+            grid-row: 1 / span 2;
+            position: relative;
+        }
+
+        .canvas-container {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            position: relative;
+            cursor: grab;
+        }
+
+        .canvas-container:active {
+            cursor: grabbing;
+        }
+
+        #map-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .map-controls {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            z-index: 10;
+        }
+
+        .map-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: rgba(17, 24, 39, 0.9);
+            color: var(--text-primary);
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(4px);
+        }
+
+        .map-btn:hover {
+            background: var(--accent-cyan);
+            color: #030712;
+            border-color: var(--accent-cyan);
+        }
+
+        /* コンソール・生ログビュー */
+        .console-panel {
+            grid-column: 2 / span 2;
+            grid-row: 2;
+            height: 200px;
+            display: none; /* 初期状態では非表示にするが、切り替え可能に */
+        }
+
+        .log-container {
+            width: 100%;
+            height: calc(100% - 10px);
+            background: rgba(3, 7, 18, 0.8);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #34d399;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .toggle-console {
+            position: absolute;
+            top: 1rem;
+            right: 1.25rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .toggle-console:hover {
+            color: var(--accent-cyan);
+        }
+
+        /* スクロールバー装飾 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-area">
+            <h1>REALTIME SENSOR MONITOR</h1>
+            <p>PAA5160E1 (OTOS) & Adafruit BNO085 自己位置・姿勢ビジュアライザ</p>
+        </div>
+        <div class="control-area">
+            <div class="status-container">
+                <div id="status-dot" class="status-dot"></div>
+                <span id="status-text">未接続</span>
+            </div>
+            <button id="reset-sensor-btn" class="btn" onclick="resetSensors()" style="border-color: rgba(245, 158, 11, 0.4); color: #fde047; margin-right: 0.5rem;">位置・姿勢リセット</button>
+            <button id="connect-btn" class="btn" onclick="toggleConnection()">シリアル接続</button>
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <!-- 数値モニターパネル -->
+        <div class="panel info-panel">
+            <div class="panel-header">
+                <h2>センサー数値モニター</h2>
+            </div>
+            <div class="panel-content">
+                <!-- OTOS位置データ -->
+                <div class="monitor-group">
+                    <div class="monitor-title">
+                        <span>OTOS 自己位置 (PAA5160E1)</span>
+                        <span style="color: var(--accent-cyan);">I2C1</span>
+                    </div>
+                    <div class="monitor-grid">
+                        <div class="monitor-card card-cyan">
+                            <div class="card-label">X座標 [m]</div>
+                            <div id="otos-x" class="card-value">0.0000</div>
+                        </div>
+                        <div class="monitor-card card-cyan">
+                            <div class="card-label">Y座標 [m]</div>
+                            <div id="otos-y" class="card-value">0.0000</div>
+                        </div>
+                        <div class="monitor-card card-cyan" style="grid-column: span 2;">
+                            <div class="card-label">角度 (Heading)</div>
+                            <div id="otos-h" class="card-value">0.00°</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BNO085姿勢角度データ -->
+                <div class="monitor-group">
+                    <div class="monitor-title">
+                        <span>BNO085 姿勢角度 (Euler)</span>
+                        <span style="color: var(--accent-pink);">I2C3</span>
+                    </div>
+                    <div class="monitor-grid">
+                        <div class="monitor-card card-pink">
+                            <div class="card-label">ロール (Roll)</div>
+                            <div id="bno-roll" class="card-value">0.0°</div>
+                        </div>
+                        <div class="monitor-card card-pink">
+                            <div class="card-label">ピッチ (Pitch)</div>
+                            <div id="bno-pitch" class="card-value">0.0°</div>
+                        </div>
+                        <div class="monitor-card card-pink" style="grid-column: span 2;">
+                            <div class="card-label">ヨー (Yaw)</div>
+                            <div id="bno-yaw" class="card-value">0.0°</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BNO085生データ (クォータニオン) -->
+                <div class="monitor-group">
+                    <div class="monitor-title">
+                        <span>BNO085 クォータニオン (Raw)</span>
+                    </div>
+                    <div class="monitor-grid" style="grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                        <div class="monitor-card card-amber" style="padding: 0.5rem; text-align: center;">
+                            <div class="card-label">i (x)</div>
+                            <div id="bno-i" class="card-value" style="font-size: 0.9rem; margin-top: 0.1rem;">0.0000</div>
+                        </div>
+                        <div class="monitor-card card-amber" style="padding: 0.5rem; text-align: center;">
+                            <div class="card-label">j (y)</div>
+                            <div id="bno-j" class="card-value" style="font-size: 0.9rem; margin-top: 0.1rem;">0.0000</div>
+                        </div>
+                        <div class="monitor-card card-amber" style="padding: 0.5rem; text-align: center;">
+                            <div class="card-label">k (z)</div>
+                            <div id="bno-k" class="card-value" style="font-size: 0.9rem; margin-top: 0.1rem;">0.0000</div>
+                        </div>
+                        <div class="monitor-card card-amber" style="padding: 0.5rem; text-align: center;">
+                            <div class="card-label">r (w)</div>
+                            <div id="bno-r" class="card-value" style="font-size: 0.9rem; margin-top: 0.1rem;">1.0000</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D姿勢ビューパネル -->
+        <div class="panel view-3d-panel">
+            <div class="panel-header">
+                <h2>3D 姿勢プレビュー (BNO085)</h2>
+            </div>
+            <div class="panel-content" style="padding: 0;">
+                <div id="three-container"></div>
+            </div>
+        </div>
+
+        <!-- 2D軌跡マップパネル -->
+        <div class="panel map-2d-panel">
+            <div class="panel-header">
+                <h2>自己位置移動軌跡 (OTOS)</h2>
+                <div class="toggle-console" onclick="toggleConsoleView()">生ログコンソール切替</div>
+            </div>
+            <div class="panel-content" style="padding: 0; position: relative;">
+                <div id="canvas-container" class="canvas-container">
+                    <canvas id="map-canvas"></canvas>
+                </div>
+                <div class="map-controls">
+                    <button class="map-btn" onclick="zoomMap(1.2)">＋</button>
+                    <button class="map-btn" onclick="zoomMap(0.8)">－</button>
+                    <button class="map-btn" onclick="resetMap()" style="font-size: 0.8rem; font-weight: normal;">RESET</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- コンソールログパネル（トグル可能） -->
+        <div id="console-panel" class="panel console-panel">
+            <div class="panel-header">
+                <h2>シリアル生データログ</h2>
+            </div>
+            <div class="panel-content">
+                <div id="log-container" class="log-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Web Serial API 関連の変数
+        let port;
+        let reader;
+        let keepReading = true;
+
+        // データ保持用変数
+        let path = []; // OTOS 軌跡データ [{x, y, h}]
+        let currentPos = { x: 0, y: 0, h: 0 };
+        
+        // BNO姿勢のオフセット用変数と生データ保持
+        // BNO姿勢のオフセット用クォータニオンと生データ保持
+        let qOffset = new THREE.Quaternion(); // 初期状態は回転なし
+        let currentRawBno = { i: 0, j: 0, k: 0, r: 1 };
+        
+        // 2D Map表示制御変数
+        let zoom = 150; // ピクセル/メートル
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let startDragX = 0;
+        let startDragY = 0;
+
+        // Three.js 関連の変数
+        let scene, camera, renderer, boardMesh;
+
+        // ページロード時の初期化
+        window.addEventListener('DOMContentLoaded', () => {
+            initThree();
+            initCanvas();
+            // ウィンドウサイズ変更時にリサイズ対応
+            window.addEventListener('resize', onWindowResize);
+        });
+
+        // 3D Three.js の初期化
+        function initThree() {
+            const container = document.getElementById('three-container');
+            const width = container.clientWidth || 400;
+            const height = container.clientHeight || 400;
+
+            scene = new THREE.Scene();
+            
+            // カメラ
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+            camera.position.set(0, 4, 6);
+            camera.lookAt(0, 0, 0);
+
+            // レンダラー
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // 環境光
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            // 平行光源
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            // 補助光源
+            const pointLight = new THREE.PointLight(0x06b6d4, 0.5, 10);
+            pointLight.position.set(-3, -2, -3);
+            scene.add(pointLight);
+
+            // グリッドヘルパー
+            const gridHelper = new THREE.GridHelper(10, 10, 0x4b5563, 0x1f2937);
+            gridHelper.position.y = -1;
+            scene.add(gridHelper);
+
+            // ボードモデルの構築（グループ化）
+            boardMesh = new THREE.Group();
+
+            // 基盤部分（ダーク調）
+            const pcbGeom = new THREE.BoxGeometry(3, 0.1, 2);
+            const pcbMat = new THREE.MeshPhongMaterial({ 
+                color: 0x0f172a, 
+                shininess: 70,
+                specular: 0x475569
+            });
+            const pcb = new THREE.Mesh(pcbGeom, pcbMat);
+            boardMesh.add(pcb);
+
+            // コネクタピン（金色）
+            const pinGeom = new THREE.BoxGeometry(0.08, 0.2, 1.8);
+            const pinMat = new THREE.MeshPhongMaterial({ color: 0xd97706, shininess: 90 });
+            
+            const pinLeft = new THREE.Mesh(pinGeom, pinMat);
+            pinLeft.position.set(-1.4, 0.1, 0);
+            boardMesh.add(pinLeft);
+
+            const pinRight = new THREE.Mesh(pinGeom, pinMat);
+            pinRight.position.set(1.4, 0.1, 0);
+            boardMesh.add(pinRight);
+
+            // 前方を示す矢印 (ピンク)
+            const arrowGeom = new THREE.ConeGeometry(0.15, 0.5, 4);
+            const arrowMat = new THREE.MeshPhongMaterial({ color: 0xec4899 });
+            const arrow = new THREE.Mesh(arrowGeom, arrowMat);
+            arrow.rotation.x = Math.PI / 2;
+            arrow.position.set(0, 0.1, -0.7); // -Z方向が前方
+            boardMesh.add(arrow);
+
+            // BNO085 センサーパッケージ (小さめの黒いIC表現)
+            const sensorGeom = new THREE.BoxGeometry(0.4, 0.08, 0.4);
+            const sensorMat = new THREE.MeshPhongMaterial({ color: 0x1e293b });
+            const sensor = new THREE.Mesh(sensorGeom, sensorMat);
+            sensor.position.set(0.5, 0.09, 0.2);
+            boardMesh.add(sensor);
+
+            // LED (青点灯)
+            const ledGeom = new THREE.SphereGeometry(0.06, 8, 8);
+            const ledMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
+            const led = new THREE.Mesh(ledGeom, ledMat);
+            led.position.set(-1.2, 0.1, 0.8);
+            boardMesh.add(led);
+
+            scene.add(boardMesh);
+
+            animate();
+        }
+
+        // 3D描画ループ
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // リサイズ時のハンドラ
+        function onWindowResize() {
+            // 3Dレンダラーのリサイズ
+            const container3d = document.getElementById('three-container');
+            const w3d = container3d.clientWidth;
+            const h3d = container3d.clientHeight;
+            camera.aspect = w3d / h3d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w3d, h3d);
+
+            // 2D Canvasのリサイズ
+            const canvas = document.getElementById('map-canvas');
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawMap();
+        }
+
+        // 2D Canvasの初期化とドラッグ操作の設定
+        function initCanvas() {
+            const canvas = document.getElementById('map-canvas');
+            const container = document.getElementById('canvas-container');
+
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            // ドラッグスクロール処理
+            container.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startDragX = e.clientX - offsetX;
+                startDragY = e.clientY - offsetY;
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            container.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                offsetX = e.clientX - startDragX;
+                offsetY = e.clientY - startDragY;
+                drawMap();
+            });
+
+            // ホイールズーム処理
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+                zoomMap(zoomFactor);
+            });
+
+            drawMap();
+        }
+
+        // マップのズーム制御
+        function zoomMap(factor) {
+            zoom *= factor;
+            // 最小値と最大値のクリップ
+            zoom = Math.max(10, Math.min(2000, zoom));
+            drawMap();
+        }
+
+        // マップ位置のリセット
+        function resetMap() {
+            zoom = 150;
+            offsetX = 0;
+            offsetY = 0;
+            drawMap();
+        }
+
+        // 2D マップの描画
+        function drawMap() {
+            const canvas = document.getElementById('map-canvas');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // 背景グリッド（1メートル間隔、および10センチメートル間隔）
+            const gridSpacing = 1.0; // 1メートル
+            const subGridSpacing = 0.1; // 10センチメートル
+            const cx = w / 2 + offsetX;
+            const cy = h / 2 + offsetY;
+
+            // 10cmサブグリッド描画 (薄いグレー)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+            ctx.lineWidth = 1;
+            for (let x = Math.floor((-w/2 - offsetX)/zoom/subGridSpacing)*subGridSpacing; x < (w/2 - offsetX)/zoom; x += subGridSpacing) {
+                const px = cx + x * zoom;
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, h);
+            }
+            for (let y = Math.floor((-h/2 - offsetY)/zoom/subGridSpacing)*subGridSpacing; y < (h/2 - offsetY)/zoom; y += subGridSpacing) {
+                const py = cy - y * zoom;
+                ctx.moveTo(0, py);
+                ctx.lineTo(w, py);
+            }
+            ctx.stroke();
+
+            // 1mメイングリッド描画 (少し明るい線)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            for (let x = Math.floor((-w/2 - offsetX)/zoom); x < (w/2 - offsetX)/zoom; x += gridSpacing) {
+                const px = cx + x * zoom;
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, h);
+            }
+            for (let y = Math.floor((-h/2 - offsetY)/zoom); y < (h/2 - offsetY)/zoom; y += gridSpacing) {
+                const py = cy - y * zoom;
+                ctx.moveTo(0, py);
+                ctx.lineTo(w, py);
+            }
+            ctx.stroke();
+
+            // 軸の描画 (原点交差)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1.5;
+            ctx.moveTo(cx, 0);
+            ctx.lineTo(cx, h);
+            ctx.moveTo(0, cy);
+            ctx.lineTo(w, cy);
+            ctx.stroke();
+
+            // 移動軌跡の描画
+            if (path.length > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = varColor('--accent-cyan');
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = varColor('--accent-cyan');
+
+                for (let i = 0; i < path.length; i++) {
+                    const px = cx + path[i].x * zoom;
+                    const py = cy - path[i].y * zoom; // Y軸反転
+                    if (i === 0) {
+                        ctx.moveTo(px, py);
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+                ctx.stroke();
+                ctx.shadowBlur = 0; // シャドウリセット
+            }
+
+            // 現在値マーカー（ロボット/センサー）
+            ctx.save();
+            ctx.translate(cx + currentPos.x * zoom, cy - currentPos.y * zoom);
+            ctx.rotate(currentPos.h); // Heading回転
+
+            // センサーを模した形
+            ctx.fillStyle = varColor('--accent-pink');
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = varColor('--accent-pink');
+            
+            // 三角形の矢印
+            ctx.beginPath();
+            ctx.moveTo(14, 0);
+            ctx.lineTo(-8, -8);
+            ctx.lineTo(-4, 0);
+            ctx.lineTo(-8, 8);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        // CSS変数からカラーを取得するヘルパー
+        function varColor(name) {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        }
+
+        // シリアルポート接続トグル
+        async function toggleConnection() {
+            if (port) {
+                // 切断処理
+                keepReading = false;
+                if (reader) {
+                    await reader.cancel();
+                }
+                if (port.readable) {
+                    await port.close();
+                }
+                port = null;
+                
+                document.getElementById('connect-btn').textContent = 'シリアル接続';
+                document.getElementById('connect-btn').classList.remove('connected');
+                document.getElementById('status-dot').classList.remove('active');
+                document.getElementById('status-text').textContent = '未接続';
+            } else {
+                // 接続処理
+                try {
+                    port = await navigator.serial.requestPort();
+                    await port.open({ baudRate: 115200 });
+
+                    document.getElementById('connect-btn').textContent = '切断';
+                    document.getElementById('connect-btn').classList.add('connected');
+                    document.getElementById('status-dot').classList.add('active');
+                    document.getElementById('status-text').textContent = '接続中';
+
+                    keepReading = true;
+                    readSerial();
+                } catch (err) {
+                    console.error(err);
+                    alert('接続に失敗しました: ' + err.message);
+                }
+            }
+        }
+
+        // シリアルデータ読み込みループ
+        async function readSerial() {
+            const decoder = new TextDecoderStream();
+            const inputClosed = port.readable.pipeTo(decoder.writable);
+            const inputStream = decoder.readable;
+            reader = inputStream.getReader();
+
+            let buffer = '';
+            try {
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    buffer += value;
+                    let lines = buffer.split('\r\n');
+                    buffer = lines.pop(); // 最後の未完了行を保持
+                    
+                    for (let line of lines) {
+                        parseLine(line.trim());
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        // データのパース
+        function parseLine(line) {
+            if (!line) return;
+
+            addLog(line);
+
+            const parts = line.split(',');
+            const header = parts[0];
+
+            if (header === 'O' && parts.length === 4) {
+                // OTOS 位置データ
+                const x = parseFloat(parts[1]);
+                const y = parseFloat(parts[2]);
+                const h = parseFloat(parts[3]); // Heading (Radians)
+
+                currentPos.x = x;
+                currentPos.y = y;
+                currentPos.h = h;
+
+                // 軌跡を保存
+                path.push({ x: x, y: y, h: h });
+                // 描画が多すぎる場合は適度に間引く
+                if (path.length > 2000) {
+                    path.shift();
+                }
+
+                // UI表示の更新
+                document.getElementById('otos-x').textContent = x.toFixed(4);
+                document.getElementById('otos-y').textContent = y.toFixed(4);
+                
+                // ラジアンを度に変換して表示
+                const h_deg = h * (180 / Math.PI);
+                document.getElementById('otos-h').textContent = h_deg.toFixed(2) + '°';
+
+                drawMap();
+            } 
+            else if (header === 'B' && parts.length === 5) {
+                // BNO085 クォータニオンデータ
+                const i = parseFloat(parts[1]);
+                const j = parseFloat(parts[2]);
+                const k = parseFloat(parts[3]);
+                const r = parseFloat(parts[4]);
+
+                // 現在の生データを保存
+                currentRawBno = { i: i, j: j, k: k, r: r };
+
+                // Three.js 座標系に変換
+                const currentQ = new THREE.Quaternion(i, k, -j, r);
+                
+                // オフセットを適用
+                const correctedQ = new THREE.Quaternion().multiplyQuaternions(qOffset, currentQ);
+
+                // UI表示用のBNO成分に逆変換
+                const ci = correctedQ.x;
+                const ck = correctedQ.y;
+                const cj = -correctedQ.z;
+                const cr = correctedQ.w;
+
+                // UI表示更新
+                document.getElementById('bno-i').textContent = ci.toFixed(4);
+                document.getElementById('bno-j').textContent = cj.toFixed(4);
+                document.getElementById('bno-k').textContent = ck.toFixed(4);
+                document.getElementById('bno-r').textContent = cr.toFixed(4);
+
+                // オイラー角計算と表示
+                const euler = new THREE.Euler().setFromQuaternion(correctedQ, 'YXZ');
+                const radToDeg = 180 / Math.PI;
+                const roll = euler.z * radToDeg;
+                const pitch = euler.x * radToDeg;
+                const yaw = euler.y * radToDeg;
+
+                document.getElementById('bno-roll').textContent = roll.toFixed(1) + '°';
+                document.getElementById('bno-pitch').textContent = pitch.toFixed(1) + '°';
+                document.getElementById('bno-yaw').textContent = yaw.toFixed(1) + '°';
+
+                // Three.js 3D回転モデル更新
+                if (boardMesh) {
+                    boardMesh.quaternion.copy(correctedQ);
+                }
+            }
+        }
+
+        // 位置・姿勢リセットコマンド送信とGUI側リセット処理
+        async function resetSensors() {
+            // 1. PC側でBNO085のオフセットを設定
+            if (boardMesh) {
+                // 現在の生のBNOクォータニオン（Three.js座標系）を取得し、その逆回転をオフセットにする
+                const currentRawQ = new THREE.Quaternion(currentRawBno.i, currentRawBno.k, -currentRawBno.j, currentRawBno.r);
+                qOffset.copy(currentRawQ).invert();
+            }
+            
+            // 2. OTOS の軌跡をクリア
+            path = [];
+            currentPos = { x: 0, y: 0, h: 0 };
+            document.getElementById('otos-x').textContent = '0.0000';
+            document.getElementById('otos-y').textContent = '0.0000';
+            document.getElementById('otos-h').textContent = '0.00°';
+            drawMap();
+            
+            // 3. マイコンにリセットコマンド 'R' を送信
+            if (port && port.writable) {
+                try {
+                    const writer = port.writable.getWriter();
+                    const data = new TextEncoder().encode('R');
+                    await writer.write(data);
+                    writer.releaseLock();
+                    addLog(">> PC: Sent Reset Command 'R'");
+                } catch (err) {
+                    console.error("コマンド送信エラー:", err);
+                    addLog(">> PC: Failed to send reset command: " + err.message);
+                }
+            } else {
+                addLog(">> PC: Reset (No active serial port, simulated on PC)");
+            }
+        }
+
+
+
+        // 生ログのコンソール追加
+        function addLog(text) {
+            const container = document.getElementById('log-container');
+            container.textContent += text + '\n';
+            // ログが大きくなりすぎないように制限
+            if (container.textContent.length > 10000) {
+                container.textContent = container.textContent.substring(container.textContent.length - 8000);
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // コンソール表示のトグル
+        function toggleConsoleView() {
+            const panel = document.getElementById('console-panel');
+            if (panel.style.display === 'flex') {
+                panel.style.display = 'none';
+            } else {
+                panel.style.display = 'flex';
+                // 表示切替時にリサイズを促す
+                setTimeout(onWindowResize, 50);
+            }
+        }
+    </script>
+</body>
+</html>
